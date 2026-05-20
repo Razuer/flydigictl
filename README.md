@@ -78,6 +78,35 @@ sudo systemctl restart flydigid.service
 sudo journalctl -u flydigid -f
 ```
 
+## Controller Protocol Mode
+
+`flydigid` defaults to `auto` mode, which tries DInput/HID first and falls back to XInput. You can force a mode with either a daemon flag or an environment variable:
+
+```bash
+flydigid --mode auto
+flydigid --mode dinput
+flydigid --mode xinput
+FLYDIGI_MODE=dinput flydigid
+```
+
+Accepted mode names are `auto`, `dinput`, and `xinput`. `hid` and `directinput` are accepted aliases for `dinput`.
+
+For the systemd service, run `sudo systemctl edit flydigid.service` and add a drop-in override:
+
+```ini
+[Service]
+Environment=FLYDIGI_MODE=dinput
+```
+
+Then reload and restart the daemon:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart flydigid.service
+```
+
+This selects the protocol `flydigid` uses to configure the controller. It does not force the controller hardware into DInput/HID mode; use the controller's own mode switch/button sequence for that. Whether extra buttons such as `M1`-`M4` appear as unique Linux input buttons depends on the controller's HID reports in that mode.
+
 ## Basic Usage
 
 Check CLI and daemon versions:
@@ -96,6 +125,7 @@ Example:
 
 ```text
             Device : 105 (Vader 4 Pro)
+     Protocol mode : dinput
 Battery percentage : 100%
    Connection type : wireless
                CPU : wch (ch571)
@@ -140,6 +170,33 @@ Set joystick deadzone, from `0` to `100`:
 flydigictl joystick left deadzone 8
 flydigictl joystick right deadzone 8
 ```
+
+## Button Mapping
+
+Show the controller's current firmware button mappings:
+
+```bash
+flydigictl buttons
+```
+
+Map one controller button to another gamepad button:
+
+```bash
+flydigictl buttons map C A
+flydigictl buttons map Z B
+flydigictl buttons map M1 LB
+flydigictl buttons map M2 RB
+```
+
+Reset a button to its native/unmapped value:
+
+```bash
+flydigictl buttons reset C
+```
+
+Recognized button names are `UP`, `RIGHT`, `DOWN`, `LEFT`, `A`, `B`, `SELECT`, `X`, `Y`, `START`, `LB`, `RB`, `LT`, `RT`, `THUMBL`, `THUMBR`, `C`, `Z`, `M1`, `M2`, `M3`, `M4`, `M5`, `M6`, `MENU`, `HOME`, and `BACK`. `L3` and `R3` are accepted aliases for `THUMBL` and `THUMBR`.
+
+Button mapping is saved through the controller profile save path. In XInput mode, extra buttons such as `C`, `Z`, and `M1`-`M4` can be remapped to existing Xbox-style buttons, but Linux's `xpad` driver does not expose them as additional unique buttons.
 
 ## LED Configuration
 
@@ -241,6 +298,14 @@ If `lsusb -t` shows the controller as `Driver=[none]`, reload `xpad` and replug 
 sudo modprobe xpad
 ```
 
+If this has to be repeated after every reconnect, check for an `xpad` blacklist. A blacklist prevents the kernel from auto-loading `xpad` when the controller appears:
+
+```bash
+ls /etc/modprobe.d/*xpad*.conf /usr/lib/modprobe.d/*xpad*.conf
+```
+
+Remove or edit any local file that contains `blacklist xpad`, then replug the controller. `flydigid` uses libusb auto-detach for XInput controllers, so it should not need to unload the global `xpad` module.
+
 Test input events:
 
 ```bash
@@ -256,7 +321,7 @@ sudo pacman -S evtest joystick
 
 ## Driver Conflicts
 
-On Linux, kernel drivers can claim the controller before `flydigid` can communicate with it. Symptoms include:
+On Linux, kernel drivers can claim the controller before `flydigid` can communicate with it. For XInput controllers, `flydigid` asks libusb to detach and reattach the kernel driver while it is configuring the controller, so `xpad` usually does not need to be unloaded manually. Symptoms of a remaining driver conflict include:
 
 - `flydigictl dump` returns `device doesn't respond`
 - `flydigictl leds` fails while reading or writing
@@ -272,12 +337,6 @@ Check loaded drivers:
 
 ```bash
 lsmod | grep -E 'xpad|hid_xpadneo|uhid'
-```
-
-Temporarily unload `xpad`:
-
-```bash
-sudo modprobe -r xpad
 ```
 
 Temporarily unload `hid_xpadneo`:

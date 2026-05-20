@@ -23,11 +23,20 @@ import (
 type Server struct {
 	connectmu sync.Mutex
 
-	gp *flydigi.Gamepad
+	gp   *flydigi.Gamepad
+	mode flydigi.ProtocolMode
 }
 
 func New() *Server {
-	return &Server{}
+	return NewWithProtocolMode(flydigi.ProtocolModeAuto)
+}
+
+func NewWithProtocolMode(mode flydigi.ProtocolMode) *Server {
+	if mode == "" {
+		mode = flydigi.ProtocolModeAuto
+	}
+
+	return &Server{mode: mode}
 }
 
 func (s *Server) checkConnected() *dbus.Error {
@@ -46,7 +55,7 @@ func (s *Server) Connect() *dbus.Error {
 		return makeError(common.ErrorAlreadyConnected, nil)
 	}
 
-	dev, err := flydigi.OpenGamepad()
+	dev, err := flydigi.OpenGamepadWithMode(s.mode)
 	if err != nil {
 		if errors.Is(err, protocol.ErrGamepadNotPresent) {
 			return makeError(common.ErrorGamepadNotFound, nil)
@@ -234,6 +243,7 @@ func (s *Server) GetDeviceInfo() ([]byte, *dbus.Error) {
 		ConnectionType: pb.ConnectionType(info.ConnectType),
 		CpuType:        info.CpuType,
 		CpuName:        info.CpuName,
+		ProtocolMode:   info.ConnectMode,
 	}
 
 	data, err := proto.Marshal(&prot)

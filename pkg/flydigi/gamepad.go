@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,12 +18,26 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-type deviceMode int
+type ProtocolMode string
 
 const (
-	deviceModeXInput deviceMode = iota + 1
-	deviceModeDInput
+	ProtocolModeAuto   ProtocolMode = "auto"
+	ProtocolModeDInput ProtocolMode = "dinput"
+	ProtocolModeXInput ProtocolMode = "xinput"
 )
+
+func ParseProtocolMode(mode string) (ProtocolMode, error) {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "", "auto":
+		return ProtocolModeAuto, nil
+	case "dinput", "directinput", "hid":
+		return ProtocolModeDInput, nil
+	case "xinput":
+		return ProtocolModeXInput, nil
+	default:
+		return "", fmt.Errorf("unknown protocol mode %q, expected auto, dinput, or xinput", mode)
+	}
+}
 
 type FDGConncetType int32
 
@@ -84,7 +99,8 @@ const (
 type commandCallbackFunc func(data []byte)
 
 type Gamepad struct {
-	prot protocol.Protocol
+	prot         protocol.Protocol
+	protocolMode ProtocolMode
 
 	devInfo *utils.CondValue[FDGDeviceInfo]
 
@@ -97,20 +113,55 @@ type Gamepad struct {
 }
 
 func OpenGamepad() (*Gamepad, error) {
-	prot, err := dinput.Open()
-	if err != nil {
-		if err != protocol.ErrGamepadNotPresent {
+	return OpenGamepadWithMode(ProtocolModeAuto)
+}
+
+func OpenGamepadWithMode(mode ProtocolMode) (*Gamepad, error) {
+	var prot protocol.Protocol
+	actualMode := mode
+	var err error
+
+	switch mode {
+	case ProtocolModeAuto:
+		prot, err = dinput.Open()
+		if err != nil {
+			if err != protocol.ErrGamepadNotPresent {
+				return nil, fmt.Errorf("open dinput device: %w", err)
+			}
+
+			prot, err = xinput.Open()
+			if err != nil {
+				return nil, fmt.Errorf("open xinput device: %w", err)
+			}
+			actualMode = ProtocolModeXInput
+		} else {
+			actualMode = ProtocolModeDInput
+		}
+
+	case ProtocolModeDInput:
+		prot, err = dinput.Open()
+		if err != nil {
 			return nil, fmt.Errorf("open dinput device: %w", err)
 		}
 
+	case ProtocolModeXInput:
 		prot, err = xinput.Open()
 		if err != nil {
 			return nil, fmt.Errorf("open xinput device: %w", err)
 		}
+
+	default:
+		return nil, fmt.Errorf("unknown protocol mode %q", mode)
 	}
 
+	return newGamepad(prot, actualMode), nil
+}
+
+func newGamepad(prot protocol.Protocol, mode ProtocolMode) *Gamepad {
 	gamepad := &Gamepad{
-		prot:          prot,
+		prot:         prot,
+		protocolMode: mode,
+
 		closech:       make(chan struct{}),
 		devInfo:       utils.NewCondValue[FDGDeviceInfo](&sync.Mutex{}),
 		currConfig:    utils.NewCondValue[config.AllConfigBean](&sync.Mutex{}),
@@ -118,7 +169,7 @@ func OpenGamepad() (*Gamepad, error) {
 	}
 	go gamepad.readLoop()
 
-	return gamepad, nil
+	return gamepad
 }
 
 func (g *Gamepad) Close() error {
@@ -180,6 +231,7 @@ func (g *Gamepad) handleDeviceInfo(msg protocol.MessageGamePadInfo) error {
 	devInfo := FDGDeviceInfo{}
 
 	devInfo.DeviceId = int32(msg.DeviceID)
+	devInfo.ConnectMode = string(g.protocolMode)
 	// if (!GameHandleListDic.gameHandleDic.ContainsKey((int)deviceId))
 	// {
 	// 	return;
@@ -436,5 +488,13 @@ func (g *Gamepad) GetLEDConfig() (*config.NewLedConfigBean, error) {
 }
 
 func (g *Gamepad) GetGamepadInfo() (*FDGDeviceInfo, error) {
-	return getConfigRetry(g.prot, g.devInfo, protocol.CommandGetDeviceInfo{})
+	info, err := getConfigRetry(g.prot, g.devInfo, protocol.CommandGetDeviceInfo{})
+	if err != nil {
+		return nil, err
+	}
+	if info.ConnectMode == "" {
+		info.ConnectMode = string(g.protocolMode)
+	}
+
+	return info, nil
 }

@@ -46,25 +46,94 @@ func (c *Color) LedUnit() *config.LedUnit {
 }
 
 func ConvertGamepadConfiguration(bean *config.AllConfigBean) *GamepadConfiguration {
-	return &GamepadConfiguration{
-		LeftJoystick:  ConvertJoystickConfiguration(bean.JoyMapping.LeftJoystic),
-		RightJoystick: ConvertJoystickConfiguration(bean.JoyMapping.RightJoystic),
+	cfg := &GamepadConfiguration{}
+	if bean == nil {
+		return cfg
 	}
+
+	if bean.JoyMapping != nil {
+		cfg.LeftJoystick = ConvertJoystickConfiguration(bean.JoyMapping.LeftJoystic)
+		cfg.RightJoystick = ConvertJoystickConfiguration(bean.JoyMapping.RightJoystic)
+	}
+	cfg.ButtonMappings = ConvertButtonMappings(bean.KeyMapping)
+
+	return cfg
 }
 
 func (c *GamepadConfiguration) ApplyTo(bean *config.AllConfigBean) {
-	c.LeftJoystick.ApplyTo(bean.JoyMapping.LeftJoystic)
-	c.RightJoystick.ApplyTo(bean.JoyMapping.RightJoystic)
+	if c == nil || bean == nil {
+		return
+	}
+
+	if c.LeftJoystick != nil && bean.JoyMapping != nil {
+		c.LeftJoystick.ApplyTo(bean.JoyMapping.LeftJoystic)
+	}
+	if c.RightJoystick != nil && bean.JoyMapping != nil {
+		c.RightJoystick.ApplyTo(bean.JoyMapping.RightJoystic)
+	}
+
+	for _, mapping := range c.ButtonMappings {
+		mapping.ApplyTo(bean.KeyMapping)
+	}
 }
 
 func ConvertJoystickConfiguration(bean *config.JoyStickBean) *JoystickConfiguration {
+	if bean == nil || bean.Curve == nil {
+		return &JoystickConfiguration{}
+	}
+
 	return &JoystickConfiguration{
 		Deadzone: bean.Curve.Zero,
 	}
 }
 
 func (c *JoystickConfiguration) ApplyTo(bean *config.JoyStickBean) {
+	if c == nil || bean == nil || bean.Curve == nil {
+		return
+	}
+
 	bean.Curve.Zero = c.Deadzone
+}
+
+func ConvertButtonMappings(beans []*config.KeyMappingBean) []*ButtonMapping {
+	mappings := make([]*ButtonMapping, 0, len(beans))
+
+	for _, bean := range beans {
+		if bean == nil {
+			continue
+		}
+
+		mappedKeyID, _ := strconv.Atoi(bean.MapData)
+
+		mappings = append(mappings, &ButtonMapping{
+			KeyId:       bean.KeyId,
+			Key:         bean.Key,
+			MappedKeyId: int32(mappedKeyID),
+			MappedKey:   bean.MapKey,
+			IsOwn:       bean.IsOwn,
+			IsMapped:    bean.IsMap,
+		})
+	}
+
+	return mappings
+}
+
+func (c *ButtonMapping) ApplyTo(beans []*config.KeyMappingBean) {
+	if c == nil || c.KeyId < 0 || int(c.KeyId) >= len(beans) || c.MappedKeyId < 0 || c.MappedKeyId > 255 {
+		return
+	}
+
+	bean := beans[c.KeyId]
+	if bean == nil {
+		return
+	}
+
+	bean.MapData = strconv.Itoa(int(c.MappedKeyId))
+	bean.MapKey = c.MappedKey
+	bean.IsMap = c.KeyId != c.MappedKeyId
+	bean.MapType = config.KeyMapTypeGamePad
+	bean.Turbo = 0
+	bean.TurboType = 0
 }
 
 func ConvertLEDConfiguration(bean *config.NewLedConfigBean) *LedsConfiguration {
