@@ -130,9 +130,12 @@ func (b *NewLedConfigBean) SetGradient(start, end LedUnit, speed float32) {
 	b.LedGroups = utils.RepeatFunc(func() *LedGroup { return &LedGroup{} }, 16)
 
 	for _, g := range b.LedGroups[:b.Rgb_num] {
+		s := start
+		e := end
+
 		g.Units = utils.RepeatFunc(func() *LedUnit { return &LedUnit{} }, 10)
-		g.Units[0] = &start
-		g.Units[1] = &end
+		g.Units[0] = &s
+		g.Units[1] = &e
 	}
 }
 

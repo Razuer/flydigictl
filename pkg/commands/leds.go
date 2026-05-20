@@ -87,11 +87,9 @@ var ledsStreamlinedCommand = &cobra.Command{
 	Short: "Sets LEDs to a streamlined effect",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return useConnection(func() error {
-			return modifyLEDConfiguration(func(conf *pb.LedsConfiguration) {
-				conf.Brightness = ledsBrightness
-				conf.Leds = &pb.LedsConfiguration_Streamlined{Streamlined: &pb.LedsStreamlined{Speed: streamlinedSpeed}}
-			})
+		return modifyLEDConfiguration(func(conf *pb.LedsConfiguration) {
+			conf.Brightness = ledsBrightness
+			conf.Leds = &pb.LedsConfiguration_Streamlined{Streamlined: &pb.LedsStreamlined{Speed: streamlinedSpeed}}
 		})
 	},
 }
@@ -108,14 +106,12 @@ var ledsBreathingCommand = &cobra.Command{
 			return errInvalidColor
 		}
 
-		return useConnection(func() error {
-			return modifyLEDConfiguration(func(conf *pb.LedsConfiguration) {
-				conf.Brightness = ledsBrightness
-				conf.Leds = &pb.LedsConfiguration_Breathing{Breathing: &pb.LedsBreathing{
-					Color: color,
-					Speed: breathingSpeed,
-				}}
-			})
+		return modifyLEDConfiguration(func(conf *pb.LedsConfiguration) {
+			conf.Brightness = ledsBrightness
+			conf.Leds = &pb.LedsConfiguration_Breathing{Breathing: &pb.LedsBreathing{
+				Color: color,
+				Speed: breathingSpeed,
+			}}
 		})
 	},
 }
@@ -137,15 +133,13 @@ var ledsGradientCommand = &cobra.Command{
 			return errInvalidColor
 		}
 
-		return useConnection(func() error {
-			return modifyLEDConfiguration(func(conf *pb.LedsConfiguration) {
-				conf.Brightness = ledsBrightness
-				conf.Leds = &pb.LedsConfiguration_Gradient{Gradient: &pb.LedsGradient{
-					StartColor: startColor,
-					EndColor:   endColor,
-					Speed:      gradientSpeed,
-				}}
-			})
+		return modifyLEDConfiguration(func(conf *pb.LedsConfiguration) {
+			conf.Brightness = ledsBrightness
+			conf.Leds = &pb.LedsConfiguration_Gradient{Gradient: &pb.LedsGradient{
+				StartColor: startColor,
+				EndColor:   endColor,
+				Speed:      gradientSpeed,
+			}}
 		})
 	},
 }
@@ -156,11 +150,9 @@ var ledsFeedbackCommand = &cobra.Command{
 	Short: "Sets LEDs to a button feedback effect",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return useConnection(func() error {
-			return modifyLEDConfiguration(func(conf *pb.LedsConfiguration) {
-				conf.Brightness = ledsBrightness
-				conf.Leds = &pb.LedsConfiguration_Feedback{Feedback: &pb.LedsFeedback{Speed: feedbackSpeed}}
-			})
+		return modifyLEDConfiguration(func(conf *pb.LedsConfiguration) {
+			conf.Brightness = ledsBrightness
+			conf.Leds = &pb.LedsConfiguration_Feedback{Feedback: &pb.LedsFeedback{Speed: feedbackSpeed}}
 		})
 	},
 }

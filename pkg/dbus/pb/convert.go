@@ -45,6 +45,24 @@ func (c *Color) LedUnit() *config.LedUnit {
 	return &config.LedUnit{r, g, b}
 }
 
+func clampUnit(v float32) float32 {
+	if v < 0 {
+		return 0
+	}
+	if v > 1 {
+		return 1
+	}
+	return v
+}
+
+func brightnessFromScale(scale byte) float32 {
+	if scale > 100 {
+		return 1
+	}
+
+	return float32(scale) / 100
+}
+
 func ConvertGamepadConfiguration(bean *config.AllConfigBean) *GamepadConfiguration {
 	cfg := &GamepadConfiguration{}
 	if bean == nil {
@@ -179,7 +197,7 @@ func ConvertLEDConfiguration(bean *config.NewLedConfigBean) *LedsConfiguration {
 		leds = &LedsConfiguration_Gradient{
 			Gradient: &LedsGradient{
 				StartColor: colorAt(0, 0),
-				EndColor:   colorAt(1, 1),
+				EndColor:   colorAt(0, 1),
 				Speed:      float32(100-bean.Loop_time) / 100,
 			},
 		}
@@ -197,12 +215,12 @@ func ConvertLEDConfiguration(bean *config.NewLedConfigBean) *LedsConfiguration {
 
 	return &LedsConfiguration{
 		Leds:       leds,
-		Brightness: float32(bean.Light_scale) / 255,
+		Brightness: brightnessFromScale(bean.Light_scale),
 	}
 }
 
 func (c *LedsConfiguration) ApplyTo(bean *config.NewLedConfigBean) {
-	bean.Light_scale = byte(c.Brightness * 100)
+	bean.Light_scale = byte(clampUnit(c.Brightness) * 100)
 
 	switch leds := c.Leds.(type) {
 	case *LedsConfiguration_Off:

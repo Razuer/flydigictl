@@ -7,6 +7,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pipe01/flydigictl/pkg/flydigi/config"
@@ -109,7 +110,7 @@ type Gamepad struct {
 	currConfig    *utils.CondValue[config.AllConfigBean]
 	currLEDConfig *utils.CondValue[config.NewLedConfigBean]
 
-	configID byte
+	configID atomic.Uint32
 }
 
 func OpenGamepad() (*Gamepad, error) {
@@ -219,10 +220,14 @@ func (g *Gamepad) handleMessage(msg protocol.Message) error {
 }
 
 func (g *Gamepad) handleGamepadConfigID(msg protocol.MessageGamepadConfigID) error {
-	g.configID = msg.ConfigID
+	g.configID.Store(uint32(msg.ConfigID))
 	log.Debug().Uint8("config_id", msg.ConfigID).Msg("got selected config id")
 
 	return nil
+}
+
+func (g *Gamepad) selectedConfigID() byte {
+	return byte(g.configID.Load())
 }
 
 func (g *Gamepad) handleDeviceInfo(msg protocol.MessageGamePadInfo) error {
@@ -406,12 +411,13 @@ func (g *Gamepad) handleLEDConfigRead(msg protocol.MessageLEDConfigReadCB) error
 func (g *Gamepad) SaveConfig(cfg *config.AllConfigBean) error {
 	var buf bytes.Buffer
 	config.ConvertByteByGConfig(&buf, cfg)
+	configID := g.selectedConfigID()
 
-	log.Info().Int("length", buf.Len()).Uint8("config_id", g.configID).Msg("saving gamepad configuration")
+	log.Info().Int("length", buf.Len()).Uint8("config_id", configID).Msg("saving gamepad configuration")
 
 	if err := g.prot.Send(protocol.CommandSendConfig{
 		Data:     buf.Bytes(),
-		ConfigID: g.configID,
+		ConfigID: configID,
 	}); err != nil {
 		return fmt.Errorf("send config: %w", err)
 	}
@@ -432,12 +438,13 @@ func (g *Gamepad) SaveConfig(cfg *config.AllConfigBean) error {
 func (g *Gamepad) SaveLEDConfig(cfg *config.NewLedConfigBean) error {
 	var buf bytes.Buffer
 	config.ConvertByteByNewLedConfig(&buf, cfg)
+	configID := g.selectedConfigID()
 
-	log.Info().Int("length", buf.Len()).Uint8("config_id", g.configID).Uint8("led_mode", byte(cfg.LedMode)).Msg("saving led configuration")
+	log.Info().Int("length", buf.Len()).Uint8("config_id", configID).Uint8("led_mode", byte(cfg.LedMode)).Msg("saving led configuration")
 
 	if err := g.prot.Send(protocol.CommandSendLEDConfig{
 		Data:     buf.Bytes(),
-		ConfigID: g.configID,
+		ConfigID: configID,
 	}); err != nil {
 		return fmt.Errorf("send config: %w", err)
 	}
@@ -480,11 +487,11 @@ func (g *Gamepad) GetConfig() (*config.AllConfigBean, error) {
 		}
 	}
 
-	return getConfigRetry(g.prot, g.currConfig, protocol.CommandReadConfig{ConfigID: g.configID})
+	return getConfigRetry(g.prot, g.currConfig, protocol.CommandReadConfig{ConfigID: g.selectedConfigID()})
 }
 
 func (g *Gamepad) GetLEDConfig() (*config.NewLedConfigBean, error) {
-	return getConfigRetry(g.prot, g.currLEDConfig, protocol.CommandReadLEDConfig{ConfigID: g.configID})
+	return getConfigRetry(g.prot, g.currLEDConfig, protocol.CommandReadLEDConfig{ConfigID: g.selectedConfigID()})
 }
 
 func (g *Gamepad) GetGamepadInfo() (*FDGDeviceInfo, error) {
