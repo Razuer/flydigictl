@@ -69,6 +69,14 @@ func (c *JoystickConfiguration) ApplyTo(bean *config.JoyStickBean) {
 
 func ConvertLEDConfiguration(bean *config.NewLedConfigBean) *LedsConfiguration {
 	var leds isLedsConfiguration_Leds
+	colorAt := func(group, unit int) *Color {
+		if len(bean.LedGroups) <= group || len(bean.LedGroups[group].Units) <= unit {
+			return ColorFromRGB(0, 0, 0)
+		}
+
+		u := bean.LedGroups[group].Units[unit]
+		return ColorFromRGB(u.R, u.G, u.B)
+	}
 
 	switch bean.LedMode {
 	case config.LedModeOff:
@@ -90,8 +98,32 @@ func ConvertLEDConfiguration(bean *config.NewLedConfigBean) *LedsConfiguration {
 			},
 		}
 
+	case config.LedModeBreathing:
+		leds = &LedsConfiguration_Breathing{
+			Breathing: &LedsBreathing{
+				Color: colorAt(0, 0),
+				Speed: float32(100-bean.Loop_time) / 100,
+			},
+		}
+
+	case config.LedModeGradient:
+		leds = &LedsConfiguration_Gradient{
+			Gradient: &LedsGradient{
+				StartColor: colorAt(0, 0),
+				EndColor:   colorAt(1, 1),
+				Speed:      float32(100-bean.Loop_time) / 100,
+			},
+		}
+
+	case config.LedModeFeedback:
+		leds = &LedsConfiguration_Feedback{
+			Feedback: &LedsFeedback{
+				Speed: float32(100-bean.Loop_time) / 100,
+			},
+		}
+
 	default:
-		panic("TODO: implement")
+		leds = nil
 	}
 
 	return &LedsConfiguration{
@@ -105,11 +137,21 @@ func (c *LedsConfiguration) ApplyTo(bean *config.NewLedConfigBean) {
 
 	switch leds := c.Leds.(type) {
 	case *LedsConfiguration_Off:
+		bean.SetOff()
 
 	case *LedsConfiguration_Steady:
 		bean.SetSteady(*leds.Steady.Color.LedUnit())
 
 	case *LedsConfiguration_Streamlined:
 		bean.SetStreamlined(leds.Streamlined.Speed)
+
+	case *LedsConfiguration_Breathing:
+		bean.SetBreathing(*leds.Breathing.Color.LedUnit(), leds.Breathing.Speed)
+
+	case *LedsConfiguration_Gradient:
+		bean.SetGradient(*leds.Gradient.StartColor.LedUnit(), *leds.Gradient.EndColor.LedUnit(), leds.Gradient.Speed)
+
+	case *LedsConfiguration_Feedback:
+		bean.SetFeedback(leds.Feedback.Speed)
 	}
 }

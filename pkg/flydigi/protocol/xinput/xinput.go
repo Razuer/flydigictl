@@ -174,7 +174,9 @@ func (d *protocolXInput) resolveUsbData(p []byte) (protocol.Message, bool) {
 			}, true
 
 		case 32:
-			// HandleGamepadConfigId
+			return protocol.MessageGamepadConfigID{
+				ConfigID: p[16],
+			}, true
 
 		case 34:
 			// HandleGamepadConfigReadCB

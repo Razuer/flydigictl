@@ -26,6 +26,7 @@ var gamepadNames = map[int32]string{
 	83: "fp2ip",
 	84: "k2",
 	85: "Vader 4",
+	105: "Vader 4 Pro",
 }
 
 var infoCommand = &cobra.Command{

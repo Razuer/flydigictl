@@ -153,6 +153,9 @@ func (g *Gamepad) handleMessage(msg protocol.Message) error {
 	case protocol.MessageDongleInfo:
 		return g.handleDongleInfo(msg)
 
+	case protocol.MessageGamepadConfigID:
+		return g.handleGamepadConfigID(msg)
+
 	case protocol.MessageGamepadConfigReadCB:
 		return g.handleGamepadConfigRead(msg)
 
@@ -164,8 +167,15 @@ func (g *Gamepad) handleMessage(msg protocol.Message) error {
 	}
 }
 
+func (g *Gamepad) handleGamepadConfigID(msg protocol.MessageGamepadConfigID) error {
+	g.configID = msg.ConfigID
+	log.Debug().Uint8("config_id", msg.ConfigID).Msg("got selected config id")
+
+	return nil
+}
+
 func (g *Gamepad) handleDeviceInfo(msg protocol.MessageGamePadInfo) error {
-	log.Debug().Uint8("deviceid", msg.DeviceID).Msg("got device info")
+	log.Debug().Uint8("deviceid", msg.DeviceID).Uint8("battery", msg.Battery).Msg("got device info")
 
 	devInfo := FDGDeviceInfo{}
 
@@ -188,18 +198,7 @@ func (g *Gamepad) handleDeviceInfo(msg protocol.MessageGamePadInfo) error {
 	devInfo.FirmwareVersionCode = int32(fw_h_2)*1000 + int32(fw_h)*100 + int32(fw_l_2)*10 + int32(fw_l)
 	devInfo.FirmwareVersion = fmt.Sprintf("%d.%d.%d.%d", fw_h_2, fw_h, fw_l_2, fw_l)
 
-	battery := msg.Battery
-	const apex2MinBY = 98
-	const apex2MaxBY = 114
-
-	if battery < apex2MinBY {
-		battery = apex2MinBY
-	} else if battery > apex2MaxBY {
-		battery = apex2MaxBY
-	}
-
-	batteryPercent := int(100 * float32(battery-apex2MinBY) / float32(apex2MaxBY-apex2MinBY))
-	devInfo.BatteryPercent = int32(batteryPercent)
+	devInfo.BatteryPercent = batteryPercent(msg)
 
 	switch msg.MotionSensorType {
 	case 1:
@@ -270,6 +269,30 @@ func (g *Gamepad) handleDeviceInfo(msg protocol.MessageGamePadInfo) error {
 	return nil
 }
 
+func batteryPercent(msg protocol.MessageGamePadInfo) int32 {
+	if msg.DeviceID == 85 || msg.DeviceID == 105 {
+		if msg.Battery <= 4 {
+			return int32(msg.Battery) * 25
+		}
+
+		if msg.Battery <= 100 {
+			return int32(msg.Battery)
+		}
+	}
+
+	battery := msg.Battery
+	const apex2MinBY = 98
+	const apex2MaxBY = 114
+
+	if battery < apex2MinBY {
+		battery = apex2MinBY
+	} else if battery > apex2MaxBY {
+		battery = apex2MaxBY
+	}
+
+	return int32(100 * float32(battery-apex2MinBY) / float32(apex2MaxBY-apex2MinBY))
+}
+
 func (g *Gamepad) handleDongleInfo(msg protocol.MessageDongleInfo) error {
 	fw_l := msg.FW_L & 15
 	fw_l_2 := msg.FW_L >> 4
@@ -293,8 +316,17 @@ func (g *Gamepad) handleDongleInfo(msg protocol.MessageDongleInfo) error {
 func (g *Gamepad) handleGamepadConfigRead(msg protocol.MessageGamepadConfigReadCB) error {
 	log.Debug().Int("length", len(msg.Data)).Msg("got gamepad configuration data")
 
-	cfg, err := config.ConvertGPConfigByByte(msg.Data)
+	deviceId := int32(0)
+	if g.devInfo.Value != nil {
+		deviceId = g.devInfo.Value.DeviceId
+	}
+	cfg, err := config.ConvertGPConfigByByte(msg.Data, deviceId)
 	if err != nil {
+		preview := msg.Data
+		if len(preview) > 32 {
+			preview = preview[:32]
+		}
+		log.Error().Err(err).Bytes("data", preview).Int("length", len(msg.Data)).Int32("device_id", deviceId).Msg("failed to parse gamepad config")
 		return fmt.Errorf("convert GP config: %w", err)
 	}
 
@@ -323,7 +355,7 @@ func (g *Gamepad) SaveConfig(cfg *config.AllConfigBean) error {
 	var buf bytes.Buffer
 	config.ConvertByteByGConfig(&buf, cfg)
 
-	log.Info().Int("length", buf.Len()).Msg("saving gamepad configuration")
+	log.Info().Int("length", buf.Len()).Uint8("config_id", g.configID).Msg("saving gamepad configuration")
 
 	if err := g.prot.Send(protocol.CommandSendConfig{
 		Data:     buf.Bytes(),
@@ -349,7 +381,7 @@ func (g *Gamepad) SaveLEDConfig(cfg *config.NewLedConfigBean) error {
 	var buf bytes.Buffer
 	config.ConvertByteByNewLedConfig(&buf, cfg)
 
-	log.Info().Int("length", buf.Len()).Msg("saving led configuration")
+	log.Info().Int("length", buf.Len()).Uint8("config_id", g.configID).Uint8("led_mode", byte(cfg.LedMode)).Msg("saving led configuration")
 
 	if err := g.prot.Send(protocol.CommandSendLEDConfig{
 		Data:     buf.Bytes(),
@@ -390,6 +422,12 @@ func getConfigRetry[T any](prot protocol.Protocol, v *utils.CondValue[T], cmd pr
 }
 
 func (g *Gamepad) GetConfig() (*config.AllConfigBean, error) {
+	if g.devInfo.Value == nil {
+		if _, err := g.GetGamepadInfo(); err != nil {
+			return nil, fmt.Errorf("get gamepad info: %w", err)
+		}
+	}
+
 	return getConfigRetry(g.prot, g.currConfig, protocol.CommandReadConfig{ConfigID: g.configID})
 }
 

@@ -163,6 +163,13 @@ func (s *Server) GetLEDConfiguration() ([]byte, *dbus.Error) {
 		return nil, err
 	}
 
+	// Reading the main config first lets the protocol discover the selected
+	// onboard profile/config ID before reading the separate LED config blob.
+	_, err := s.gp.GetConfig()
+	if err != nil {
+		return nil, makeError(common.ErrorGamepadReadingFault, err)
+	}
+
 	conf, err := s.gp.GetLEDConfig()
 	if err != nil {
 		return nil, makeError(common.ErrorGamepadReadingFault, err)
@@ -190,14 +197,20 @@ func (s *Server) SetLEDConfiguration(data []byte) *dbus.Error {
 		return makeError(common.ErrorMarshallingFault, err)
 	}
 
+	gpConf, err := s.gp.GetConfig()
+	if err != nil {
+		return makeError(common.ErrorGamepadReadingFault, err)
+	}
+
 	ledConf, err := s.gp.GetLEDConfig()
 	if err != nil {
 		return makeError(common.ErrorGamepadReadingFault, err)
 	}
 
 	conf.ApplyTo(ledConf)
+	gpConf.Basic.NewLedConfig = ledConf
 
-	err = s.gp.SaveLEDConfig(ledConf)
+	err = s.gp.SaveConfig(gpConf)
 	if err != nil {
 		return makeError(common.ErrorGamepadWritingFault, err)
 	}
